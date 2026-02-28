@@ -20,6 +20,7 @@
 - [ ] **12. Model Caching & Performance Optimization** — Cache compiled `mjModel` instances for identical morphologies to skip redundant XML parsing.
 - [ ] **13. Logging, Serialization & Visualization** — Persist best genotypes, log generational statistics, and enable replay of evolved creatures.
 - [ ] **14. Project Documentation Setup** — Set up Sphinx + Furo (same stack as MuJoCo) and present documentation options.
+- [x] **15. Visualization Smoke Test** — Build MuJoCo's `simulate` viewer, load a test model, and verify interactive rendering works.
 
 ---
 
@@ -309,10 +310,16 @@
 
 ---
 
+### 15. Visualization Smoke Test
+
+✅ **Complete.** See [Visualization](../docs/visualization.rst) in the docs site for the simulate viewer, test model, headless rendering tests, and build dependencies.
+
+---
+
 ## Suggested Implementation Order
 
 ```
-Phase 1 — Foundation        : TODOs 1 → 2
+Phase 1 — Foundation        : TODOs 1 → 2 → 15
 Phase 2 — Morphology        : TODOs 3 → 4
 Phase 3 — Brain             : TODOs 5 → 6
 Phase 4 — Evolution Core    : TODOs 7 → 8 → 9 → 10

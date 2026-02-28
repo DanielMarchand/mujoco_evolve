@@ -14,7 +14,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ── Build MuJoCo from source (disable extras we don't need)
 set(MUJOCO_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(MUJOCO_BUILD_SIMULATE OFF CACHE BOOL "" FORCE)
+set(MUJOCO_BUILD_SIMULATE ON CACHE BOOL "" FORCE)
 set(MUJOCO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(MUJOCO_TEST_PYTHON_UTIL OFF CACHE BOOL "" FORCE)
 
@@ -59,8 +59,9 @@ enable_testing()
 
 add_executable(evo_tests
   tests/test_mujoco.cpp
+  tests/test_rendering.cpp
 )
-target_link_libraries(evo_tests PRIVATE evo_lib GTest::gtest_main)
+target_link_libraries(evo_tests PRIVATE evo_lib GTest::gtest_main glfw)
 target_compile_options(evo_tests PRIVATE -Wall -Wextra -Wpedantic)
 
 include(GoogleTest)

@@ -17,6 +17,7 @@ Requirement   Version / Details
 OS            Linux (tested on Ubuntu 22.04, x86_64)
 Compiler      GCC 11+ with C++17 support
 CMake         3.22+
+libglfw3-dev  GLFW for rendering (viewer + headless tests)
 Python        3.10+ (documentation toolchain only)
 Doxygen       1.9+ (API reference generation)
 ============  ==============================================
@@ -83,9 +84,19 @@ The project uses GoogleTest (fetched automatically via CMake ``FetchContent``).
 
    cd build && ctest --output-on-failure
 
-All tests in ``tests/test_mujoco.cpp`` should pass. These cover model loading,
-physics stepping, and simulation determinism — see :doc:`mujoco_fundamentals`
-for details on what each test verifies.
+The test suite spans two files:
+
+- ``tests/test_mujoco.cpp`` — model loading, physics stepping, determinism
+  (see :doc:`mujoco_fundamentals`).
+- ``tests/test_rendering.cpp`` — offscreen rendering via a hidden GLFW window
+  (see :doc:`visualization`).
+
+On headless CI machines, run under ``xvfb-run`` so the rendering tests can
+create an OpenGL context:
+
+.. code-block:: bash
+
+   xvfb-run -a sh -c 'cd build && ctest --output-on-failure'
 
 Build System Notes
 ------------------

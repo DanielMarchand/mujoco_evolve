@@ -9,6 +9,7 @@ Co-evolution of morphology and neural control using MuJoCo.
 
    getting_started
    mujoco_fundamentals
+   visualization
 
 .. toctree::
    :maxdepth: 2

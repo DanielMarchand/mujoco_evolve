@@ -1,0 +1,53 @@
+# Build output
+build/
+out/
+cmake-build-*/
+docs/_build/
+_build/
+
+# Third-party dependencies (built from source locally)
+third_party/
+
+# Python / Sphinx
+*.pyc
+__pycache__/
+.venv/
+
+# Compiled objects / libraries / executables
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.lib
+*.dll
+*.exe
+*.out
+
+# Precompiled headers
+*.gch
+*.pch
+
+# Debug / profiling
+*.dSYM/
+*.su
+*.idb
+*.pdb
+core
+vgcore.*
+perf.data
+perf.data.old
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+compile_commands.json
+
+# OS junk
+.DS_Store
+Thumbs.db

@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone MuJoCo 3.2.7
+        run: |
+          git clone --depth 1 --branch 3.2.7 \
+            https://github.com/google-deepmind/mujoco.git third_party/mujoco
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Test
+        run: cd build && ctest --output-on-failure
+
+  docs:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone MuJoCo 3.2.7
+        run: |
+          git clone --depth 1 --branch 3.2.7 \
+            https://github.com/google-deepmind/mujoco.git third_party/mujoco
+
+      - name: Install Doxygen
+        run: sudo apt-get update && sudo apt-get install -y doxygen
+
+      - name: Install Sphinx & extensions
+        run: pip install sphinx furo breathe sphinx-copybutton sphinxcontrib-katex
+
+      - name: Build docs
+        run: cd docs && make html

@@ -1,0 +1,31 @@
+# Doxyfile for MuJoCo Evolve
+# Generates XML consumed by Breathe/Sphinx — not intended for standalone HTML.
+
+PROJECT_NAME           = "MuJoCo Evolve"
+PROJECT_NUMBER         = 0.1.0
+PROJECT_BRIEF          = "Co-evolution of morphology and neural control using MuJoCo"
+
+# Input directories
+INPUT                  = include src
+RECURSIVE              = YES
+FILE_PATTERNS          = *.h *.hpp *.cpp
+
+# Only generate XML (for Breathe); skip HTML/LaTeX
+GENERATE_XML           = YES
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+XML_OUTPUT             = docs/_build/doxygen/xml
+
+# Extract everything, even undocumented entities (useful early on)
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+
+# Preprocessing
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = NO
+
+# Quiet output
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO

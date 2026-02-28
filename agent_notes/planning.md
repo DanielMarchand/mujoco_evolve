@@ -27,132 +27,13 @@
 
 ### 1. Project Scaffolding & CMake Build System
 
-**Goal:** Establish a clean, modular C++ project that compiles against MuJoCo.
-
-**Details:**
-
-- Create a directory layout separating concerns:
-  ```
-  mujoco_evolve/
-  ├── CMakeLists.txt
-  ├── src/
-  │   ├── main.cpp
-  │   ├── ga/           # Genetic algorithm logic
-  │   ├── morphology/   # Genotype graph, MJCF generation
-  │   ├── brain/        # Neural network implementation
-  │   ├── sim/          # MuJoCo wrappers, evaluation
-  │   └── utils/        # Threading, RNG, logging
-  ├── include/          # Public headers mirroring src/
-  ├── tests/            # Unit / integration tests
-  └── agent_notes/      # Research & planning docs
-  ```
-- CMake must target **C++17** (`CMAKE_CXX_STANDARD 17`) for `std::thread`, `std::mutex`, `std::optional`, structured bindings, and `<random>`.
-- MuJoCo 3.2.7 is built from source via `add_subdirectory(third_party/mujoco)` and linked via the `mujoco` CMake target. Compiler warnings (`-Wall -Wextra -Wpedantic`) are applied only to our own targets via `target_compile_options(... PRIVATE ...)` to avoid triggering warnings inside MuJoCo's C sources.
-- Set compiler optimisation to `-O3` for release builds.
-- Confirm the build produces a running executable that prints the MuJoCo version string.
-
-**Acceptance criteria:** `cmake --build build && ./build/evo` runs without linker errors and prints `MuJoCo version: 3.2.7`. ✅ Done.
+✅ **Complete.** See [Getting Started](../docs/getting_started.rst) in the docs site for full details (project layout, build instructions, CMake configuration, memory checking).
 
 ---
 
 ### 2. MuJoCo Sanity Check
 
-**Goal:** Prove end-to-end that we can load a model, step physics, and read state.
-
-**Details:**
-
-This TODO is covered by the GoogleTest suite in `tests/test_mujoco.cpp`. Below is a walkthrough of what each test does and why.
-
-#### Step 2.1 — Define a minimal MJCF model as a string constant
-
-```cpp
-static constexpr char kMinimalXml[] = R"(
-<mujoco>
-  <worldbody>
-    <light pos="0 0 3" dir="0 0 -1"/>          <!-- light so rendering works -->
-    <geom type="plane" size="5 5 0.1"/>         <!-- infinite ground plane -->
-    <body name="capsule" pos="0 0 1">           <!-- a body floating 1m up -->
-      <joint name="slide" type="slide" axis="0 0 1"/>   <!-- can slide vertically -->
-      <geom type="capsule" size="0.1" fromto="0 0 0 0 0 0.5" mass="1"/>
-    </body>
-  </worldbody>
-  <actuator>
-    <motor joint="slide" gear="100"/>           <!-- motor that pushes the joint -->
-  </actuator>
-  <sensor>
-    <jointpos joint="slide"/>   <!-- reads joint position (1 scalar) -->
-    <jointvel joint="slide"/>   <!-- reads joint velocity (1 scalar) -->
-  </sensor>
-</mujoco>
-)";
-```
-
-This gives us the simplest possible physics scenario: a capsule that can slide up and down, with one motor to push it and two sensors to read position/velocity. We use it across all the tests below.
-
-#### Step 2.2 — Load the model from memory (test: `LoadModelFromString`)
-
-MuJoCo normally loads XML from disk, but we can use a **Virtual File System (VFS)** to load from a string in memory — handy for tests and for our GA where we'll generate MJCF dynamically.
-
-```cpp
-mjVFS vfs;
-mj_defaultVFS(&vfs);                                          // initialize VFS
-mj_addBufferVFS(&vfs, "test.xml", kMinimalXml, strlen(kMinimalXml));  // register our string as a "file"
-
-char error[1000] = "";
-mjModel* m = mj_loadXML("test.xml", &vfs, error, sizeof(error));  // parse + compile
-// m is now a compiled physics model — m->njnt==1, m->nu==1, m->nsensordata==2
-```
-
-`mj_loadXML` parses the XML, validates it, and produces an `mjModel` — a read-only struct containing all the physics parameters (masses, geometries, joint axes, etc.). If parsing fails, `m` is `nullptr` and `error` describes the problem.
-
-#### Step 2.3 — Step physics and observe state changes (test: `StepSimulation`)
-
-```cpp
-mjData* d = mj_makeData(m);     // allocate simulation state (positions, velocities, forces)
-double z0 = d->qpos[0];         // initial position of the slide joint
-
-for (int i = 0; i < 500; ++i) {
-    mj_step(m, d);               // advance one timestep (default 0.002s)
-}
-
-double z1 = d->qpos[0];
-// z1 < z0 — the capsule fell under gravity!
-```
-
-`mjData` is the mutable simulation state: joint positions (`qpos`), velocities (`qvel`), sensor readings (`sensordata`), actuator commands (`ctrl`), etc. Each call to `mj_step` advances the simulation by one timestep. With no motor input, gravity pulls the capsule down.
-
-#### Step 2.4 — Verify determinism (test: `Determinism`)
-
-MuJoCo's physics are fully deterministic — two runs from the same initial state always produce identical results. This is **not** a design requirement for our GA (evolution is stochastic by nature), but it's essential for writing reliable unit tests:
-
-```cpp
-double run1 = run_sim();   // run 1000 steps, return final qpos[0]
-double run2 = run_sim();   // same 1000 steps from same initial state
-EXPECT_DOUBLE_EQ(run1, run2);  // bit-identical
-```
-
-#### Step 2.5 — Clean up
-
-```cpp
-mj_deleteData(d);    // free simulation state
-mj_deleteModel(m);   // free compiled model
-mj_deleteVFS(&vfs);  // free virtual file system
-```
-
-Every `mj_makeData` must be paired with `mj_deleteData`, and every successful `mj_loadXML` with `mj_deleteModel`. Missing these causes memory leaks.
-
-#### Step 2.6 — Memory checking options
-
-To catch leaks automatically, we have two main tools:
-
-| Tool | What it does | How to use | Trade-offs |
-|------|-------------|------------|------------|
-| **AddressSanitizer (ASan)** | Compiler-instrumented memory checker. Detects leaks, use-after-free, buffer overflows, stack overflows. | Add `-fsanitize=address` to compile **and** link flags in CMake. Run your binary normally — it prints errors to stderr at exit. | ~2× slower, ~3× more memory. No extra install needed (built into GCC/Clang). **Recommended as default.** |
-| **Valgrind (memcheck)** | External tool that intercepts every memory operation at runtime. Detects leaks, uninitialized reads, invalid accesses. | Install: `sudo apt install valgrind`. Run: `valgrind --leak-check=full ./build/evo_tests`. | ~20× slower. More thorough for uninitialized memory. Useful as a secondary check. |
-
-**Practical recommendation:** Enable ASan in a CMake debug preset (`-DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer"`) and run tests through it routinely. Use Valgrind only when investigating specific issues or before release milestones.
-
-**Acceptance criteria:** Reproducible unit tests pass; clean memory under ASan. ✅ Done — covered by GoogleTest suite in `tests/test_mujoco.cpp` (VersionString, LoadModelFromString, StepSimulation, Determinism).
+✅ **Complete.** See [MuJoCo Fundamentals](../docs/mujoco_fundamentals.rst) in the docs site for model loading, simulation loop, resource management, determinism, and thread safety. Tests are in `tests/test_mujoco.cpp`.
 
 ---
 
@@ -190,12 +71,12 @@ To catch leaks automatically, we have two main tools:
 **Details:**
 
 - Implement a recursive DFS function `std::string gen_mjcf(const BodyGene& root)` that:
-  1. Opens `<mujoco>` with sensible `<option>` defaults (`timestep="0.002"`, `integrator="Euler"`, gravity default).
-  2. Emits `<compiler inertiafromgeom="true" boundmass="0.001" boundinertia="0.001"/>` — `boundmass`/`boundinertia` prevent zero-mass bodies from crashing the solver on random morphologies.
-  3. Emits a `<worldbody>` containing a ground plane `<geom>` and a `<light>`.
-  4. Recursively emits `<body>`, `<geom>`, and `<joint>` tags for each node/edge in the tree. Includes `armature` and `damping` on each joint.
-  5. After the worldbody, emits an `<actuator>` block with one `<motor>` per joint, referencing joint names. Each motor sets `gear="<JointGene.gear>"`, `ctrllimited="true"`, `ctrlrange="-1 1"` (belt-and-suspenders with tanh output).
-  6. Emits a `<sensor>` block: `jointpos` + `jointvel` per joint, plus `framequat` + `framelinvel` + `frameangvel` on the root body. Expected `nsensordata ≈ 2 × njnt + 10`.
+  4.1. Opens `<mujoco>` with sensible `<option>` defaults (`timestep="0.002"`, `integrator="Euler"`, gravity default).
+  4.2. Emits `<compiler inertiafromgeom="true" boundmass="0.001" boundinertia="0.001"/>` — `boundmass`/`boundinertia` prevent zero-mass bodies from crashing the solver on random morphologies.
+  4.3. Emits a `<worldbody>` containing a ground plane `<geom>` and a `<light>`.
+  4.4. Recursively emits `<body>`, `<geom>`, and `<joint>` tags for each node/edge in the tree. Includes `armature` and `damping` on each joint.
+  4.5. After the worldbody, emits an `<actuator>` block with one `<motor>` per joint, referencing joint names. Each motor sets `gear="<JointGene.gear>"`, `ctrllimited="true"`, `ctrlrange="-1 1"` (belt-and-suspenders with tanh output).
+  4.6. Emits a `<sensor>` block: `jointpos` + `jointvel` per joint, plus `framequat` + `framelinvel` + `frameangvel` on the root body. Expected `nsensordata ≈ 2 × njnt + 10`.
 - **Collision filtering:** Add `<exclude body1="parent" body2="child"/>` pairs for directly-connected bodies to prevent solver waste on trivially overlapping parent-child geoms. Alternatively, manage `contype`/`conaffinity` bitmasks per-body (see research_mujoco §4.4). This is critical in early GA generations.
 - Use **primitive geom types only** (capsule, sphere, box) — verified that all pairwise combinations use MuJoCo's specialized collision functions (research_mujoco §4.2).
 - Name every body, joint, and actuator deterministically (e.g., `body_0`, `joint_0_1`, `motor_0_1`) so sensor/actuator ordering is predictable.
@@ -273,13 +154,13 @@ To catch leaks automatically, we have two main tools:
   - `double fitness` — computed score, default `−∞`.
   - `int n_hidden` — hidden layer size (global constant or per-individual).
 - `evaluate()` function:
-  1. `std::string xml = gen_mjcf(body_root);`
-  2. `mjModel* m = mj_loadXML(...)` — if compile fails (invalid body), assign fitness = 0 and return early.
-  3. Compute required weight count: `(m->nsensordata * n_hidden) + n_hidden + (n_hidden * m->nu) + m->nu`.
-  4. If `neural_weights.size()` doesn't match, resize and randomly initialize the mismatched portion (preserving existing weights where possible).
-  5. Instantiate `NeuralController`, run the simulation loop, compute fitness.
-  6. `mj_deleteData(d); mj_deleteModel(m);` — clean up.
-  7. Store computed fitness in the genotype.
+  7.1. `std::string xml = gen_mjcf(body_root);`
+  7.2. `mjModel* m = mj_loadXML(...)` — if compile fails (invalid body), assign fitness = 0 and return early.
+  7.3. Compute required weight count: `(m->nsensordata * n_hidden) + n_hidden + (n_hidden * m->nu) + m->nu`.
+  7.4. If `neural_weights.size()` doesn't match, resize and randomly initialize the mismatched portion (preserving existing weights where possible).
+  7.5. Instantiate `NeuralController`, run the simulation loop, compute fitness.
+  7.6. `mj_deleteData(d); mj_deleteModel(m);` — clean up.
+  7.7. Store computed fitness in the genotype.
 
 **Acceptance criteria:** `evaluate()` runs on a random genotype, produces a finite fitness value, and leaks no memory.
 
@@ -351,8 +232,8 @@ To catch leaks automatically, we have two main tools:
 - **Initialization:** Generate `N` random genotypes (random trees of depth 1–3, random weights).
 - **Selection:** Tournament selection — pick `K` random individuals, select the one with highest fitness as a parent.
 - **Reproduction:**
-  1. Copy top `E` elites.
-  2. Fill remaining `N − E` slots by selecting two parents, applying crossover with probability `p_c`, then mutating the offspring.
+  10.1. Copy top `E` elites.
+  10.2. Fill remaining `N − E` slots by selecting two parents, applying crossover with probability `p_c`, then mutating the offspring.
 - **Termination:** Run for `G` generations or until a fitness plateau is detected.
 - Print per-generation statistics: best / mean / worst fitness, diversity metrics, morphology statistics.
 
@@ -422,35 +303,9 @@ To catch leaks automatically, we have two main tools:
 
 ### 14. Project Documentation Setup
 
-**Goal:** Set up a proper documentation site so completed planning content has somewhere to live, and present the available options.
+✅ **Complete.** See [Documentation Infrastructure](../docs/doc_infrastructure.rst) in the docs site for the full stack overview, directory layout, build instructions, and how to add new pages.
 
-**Details:**
-
-MuJoCo uses **Sphinx** (Python-based documentation generator) with the **Furo** theme. Their setup includes:
-- reStructuredText (`.rst`) source files
-- Extensions: `sphinxcontrib.katex` (math), `sphinxcontrib.bibtex` (references), `sphinx_copybutton`, `sphinx_favicon`, `sphinx_toolbox.collapse`, `sphinx_toolbox.github`
-- Build: `make html` in the `doc/` directory → static HTML site
-
-We should evaluate these options:
-
-| Option | Format | Pros | Cons |
-|--------|--------|------|------|
-| **Sphinx + Furo** (MuJoCo's choice) | `.rst` or `.md` (via MyST) | Same stack as MuJoCo; excellent C++ support via Breathe+Doxygen; math rendering; professional output | Requires Python toolchain; `.rst` has a learning curve |
-| **Sphinx + MyST** | `.md` (Markdown) | Sphinx power with Markdown syntax; lower friction since we already write `.md` | Slightly less mature than raw `.rst` for advanced features |
-| **Doxygen standalone** | C++ comments | Zero extra files — docs live in source code; auto-generates API reference | Poor narrative documentation; ugly default theme; limited customization |
-| **MkDocs + Material** | `.md` | Very simple setup; great search; live reload; Material theme looks modern | No native C++ API doc extraction; would need Doxygen bridge |
-
-**Chosen approach:** **Sphinx + Furo** — the same stack MuJoCo uses. We write narrative docs in reStructuredText (`.rst`), use Breathe + Doxygen for auto-generated C++ API reference, and Furo for the theme. This keeps us aligned with MuJoCo's own documentation and gives us first-class C++ support.
-
-**Sub-steps:**
-- **14.1** — ✅ Done. Chose Sphinx + Furo.
-- **14.2** — Install Sphinx, Furo, Breathe, sphinx-copybutton, sphinxcontrib-katex, and Doxygen.
-- **14.3** — Create `docs/` directory with `conf.py`, `index.rst`, `Makefile`, and initial page structure.
-- **14.4** — Create a `Doxyfile` in the project root; configure Breathe in `conf.py` to pull C++ API docs from Doxygen XML output.
-- **14.5** — Migrate completed TODO content (TODOs 1 & 2) into the docs site as the first pages (e.g., `getting_started.rst`).
-- **14.6** — Add a top-level `make docs` convenience target (or CMake custom command) that runs Doxygen then Sphinx.
-
-**Acceptance criteria:** Running the docs build produces a browsable HTML site with an index page, a "Getting Started" page (from TODOs 1–2), and auto-generated C++ API stubs from Doxygen.
+**Summary:** Sphinx + Furo + Breathe + Doxygen. Build with `cd docs && make html`.
 
 ---
 
